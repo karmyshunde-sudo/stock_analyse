@@ -9,15 +9,11 @@ on:
         type: choice
         options:
           - 'analyze_stock'
-          - 'test_email'
+          - 'test_wechat'
       stock_code:
         description: '要分析的股票代码 (仅当任务类型为analyze_stock时需要)'
         required: false
         default: '002511.SZ'
-      recipient_email:
-        description: '接收报告的邮箱地址 (可选，如果留空则使用默认配置)'
-        required: false
-        default: ''
 
 jobs:
   analyze-stock:
@@ -45,32 +41,77 @@ jobs:
         run: |
           python -c "import akshare; print(f'akshare version: {akshare.__version__}')"
         
-      - name: 配置环境变量
+      - name: 配置企业微信Webhook
         run: |
-          echo "MAIL_SERVER=${{ secrets.MAIL_SERVER }}" >> $GITHUB_ENV
-          echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> $GITHUB_ENV
-          echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> $GITHUB_ENV
-          echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}" >> $GITHUB_ENV
-          # 如果输入了接收邮箱且非空，则使用输入的邮箱，否则使用默认配置
-          if [ -n "${{ github.event.inputs.recipient_email }}" ]; then
-            echo "MAIL_TO=${{ github.event.inputs.recipient_email }}" >> $GITHUB_ENV
-            echo "使用输入的接收邮箱: ${{ github.event.inputs.recipient_email }}"
+          echo "WECOM_WEBHOOK=${{ secrets.WECOM_WEBHOOK }}" >> $GITHUB_ENV
+          if [ -z "${{ secrets.WECOM_WEBHOOK }}" ]; then
+            echo "⚠️ 未配置WECOM_WEBHOOK，企业微信通知将不可用"
           else
-            echo "MAIL_TO=${{ secrets.MAIL_TO }}" >> $GITHUB_ENV
-            echo "使用默认接收邮箱: ${{ secrets.MAIL_TO }}"
+            echo "✅ 已配置企业微信Webhook"
           fi
         
       - name: 执行任务
         run: |
-          if [[ "${{ github.event.inputs.task }}" == "test_email" ]]; then
-            echo "执行邮件测试任务..."
-            python test_email.py
+          if [[ "${{ github.event.inputs.task }}" == "test_wechat" ]]; then
+            echo "执行企业微信测试任务..."
+            python test_wechat.py
           else
             echo "执行股票分析任务: ${{ github.event.inputs.stock_code }}"
-            # 如果提供了接收邮箱，则传递 --mail_to 参数
-            if [ -n "${{ github.event.inputs.recipient_email }}" ]; then
-              python main.py ${{ github.event.inputs.stock_code }} --mail_to "${{ github.event.inputs.recipient_email }}"
-            else
-              python main.py ${{ github.event.inputs.stock_code }}
-            fi
+            python main.py ${{ github.event.inputs.stock_code }}
           fi
+          
+      - name: 发送企业微信通知（成功）
+        if: success()
+        run: |
+          if [ -z "${{ secrets.WECOM_WEBHOOK }}" ]; then
+            echo "⚠️ 未配置WECOM_WEBHOOK，跳过发送企业微信通知"
+            exit 0
+          fi
+          
+          # 获取当前北京时间
+          beijing_time=$(date -u -d "+8 hours" "+%Y-%m-%d %H:%M:%S")
+          
+          # 根据任务类型生成消息内容
+          if [[ "${{ github.event.inputs.task }}" == "test_wechat" ]]; then
+            message="✅ 企业微信测试成功\n\n测试时间: $beijing_time\n数据来源: ${{ github.repository }}"
+            title="【测试消息】"
+          else
+            message="✅ 股票分析完成\n\n股票代码: ${{ github.event.inputs.stock_code }}\n分析时间: $beijing_time\n数据来源: ${{ github.repository }}"
+            title="【股票分析】"
+          fi
+          
+          # 发送企业微信消息
+          curl -X POST $WECOM_WEBHOOK \
+            -H "Content-Type: application/json" \
+            -d '{
+                "msgtype": "text",
+                "text": {
+                  "content": "'"$title$message"'",
+                  "mentioned_list": ["@all"]
+                }
+              }'
+              
+      - name: 发送企业微信通知（失败）
+        if: failure()
+        run: |
+          if [ -z "${{ secrets.WECOM_WEBHOOK }}" ]; then
+            echo "⚠️ 未配置WECOM_WEBHOOK，跳过发送企业微信通知"
+            exit 0
+          fi
+          
+          # 获取当前北京时间
+          beijing_time=$(date -u -d "+8 hours" "+%Y-%m-%d %H:%M:%S")
+          
+          # 生成错误消息
+          error_message="❌ 股票分析任务失败\n\n任务类型: ${{ github.event.inputs.task }}\n股票代码: ${{ github.event.inputs.stock_code }}\n错误时间: $beijing_time\n数据来源: ${{ github.repository }}\n查看日志: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          
+          # 发送企业微信消息
+          curl -X POST $WECOM_WEBHOOK \
+            -H "Content-Type: application/json" \
+            -d '{
+                "msgtype": "text",
+                "text": {
+                  "content": "【错误通知】'"$error_message"'",
+                  "mentioned_list": ["@all"]
+                }
+              }'
