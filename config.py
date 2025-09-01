@@ -70,7 +70,22 @@ class Config:
     MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")
     MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD", "")
     MAIL_SENDER_NAME: str = os.getenv("MAIL_SENDER_NAME", "Stock Analyse系统")
-    MAIL_TO: str = os.getenv("MAIL_TO", "recipient@example.com")
+    
+    # 修改点：MAIL_TO 现在可以接收工作流传入的邮件地址
+    # 优先级：1. 命令行参数 > 2. 环境变量 > 3. 默认值
+    MAIL_TO: str = os.getenv("MAIL_TO", "angel49946491@qq.com")  # 默认值设置为您的QQ邮箱
+    
+    # -------------------------
+    # 2.1 新增：用于更新MAIL_TO的方法
+    # -------------------------
+    @staticmethod
+    def set_mail_to(new_mail_to: str) -> None:
+        """
+        设置邮件接收地址（用于在运行时动态更新）
+        :param new_mail_to: 新的邮件地址
+        """
+        Config.MAIL_TO = new_mail_to
+        logging.info(f"已更新MAIL_TO为: {new_mail_to}")
     
     # -------------------------
     # 3. 数据源配置
