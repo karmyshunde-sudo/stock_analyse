@@ -32,6 +32,11 @@ def send_stock_analysis_report(stock_code: str, report: str) -> bool:
         # 获取当前北京时间
         beijing_now = datetime.now(Config.BEIJING_TIMEZONE)
         
+        # 检查MAIL_TO是否配置
+        if not Config.MAIL_TO or Config.MAIL_TO.strip() == '':
+            logger.error("MAIL_TO配置为空，无法发送邮件")
+            return False
+            
         # 邮件主题
         subject = f"{stock_code} 股票分析报告 - {beijing_now.strftime('%Y-%m-%d')}"
         
@@ -47,12 +52,23 @@ def send_stock_analysis_report(stock_code: str, report: str) -> bool:
         # 添加HTML内容
         msg.attach(MIMEText(html_content, 'html', 'utf-8'))
         
+        # 添加QQ邮箱特殊头信息（避免被当作垃圾邮件）
+        if '@qq.com' in Config.MAIL_TO.lower():
+            msg['X-Priority'] = '1'
+            msg['X-MSMail-Priority'] = 'High'
+            msg['Importance'] = 'High'
+        
         # 发送邮件
         with smtplib.SMTP_SSL(Config.MAIL_SERVER, Config.MAIL_PORT) as server:
             server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
-            server.sendmail(Config.MAIL_USERNAME, Config.MAIL_TO.split(','), msg.as_string())
+            # 确保收件人列表正确分割
+            to_list = [email.strip() for email in Config.MAIL_TO.split(',') if email.strip()]
+            server.sendmail(Config.MAIL_USERNAME, to_list, msg.as_string())
         
         logger.info(f"股票分析报告邮件已成功发送至 {Config.MAIL_TO}")
+        logger.info(f"邮件服务器: {Config.MAIL_SERVER}:{Config.MAIL_PORT}")
+        logger.info(f"发件人: {Config.MAIL_USERNAME}")
+        logger.info(f"收件人: {Config.MAIL_TO}")
         return True
     
     except Exception as e:
