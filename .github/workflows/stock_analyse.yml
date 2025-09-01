@@ -27,9 +27,19 @@ jobs:
         with:
           python-version: '3.10'
         
+      - name: 清理 pip 缓存
+        run: |
+          rm -rf ~/.cache/pip
+          rm -rf ~/.local/lib/python*/site-packages/akshare*
+          echo "已清理 pip 缓存和 akshare 安装目录"
+        
       - name: 安装依赖
         run: |
           pip install -r requirements.txt
+        
+      - name: 验证 akshare 版本
+        run: |
+          python -c "import akshare; print(f'akshare version: {akshare.__version__}')"
         
       - name: 配置环境变量
         run: |
