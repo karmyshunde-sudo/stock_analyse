@@ -90,11 +90,11 @@ def main(stock_code: str) -> Dict[str, Any]:
         send_success = send_stock_analysis_report(stock_code, report)
         
         if send_success:
-            logger.info("股票分析报告邮件发送成功")
+            logger.info(f"股票分析报告邮件已成功发送至 {Config.MAIL_TO}")
             return {
                 "status": "success",
                 "stock_code": stock_code,
-                "message": "股票分析报告已发送至指定邮箱",
+                "message": f"股票分析报告已发送至 {Config.MAIL_TO}",
                 "report_date": beijing_now.strftime("%Y-%m-%d %H:%M:%S")
             }
         else:
@@ -136,6 +136,7 @@ def setup_environment() -> bool:
         
         # 记录环境信息
         logger.info(f"当前北京时间: {beijing_now.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"邮件接收地址: {Config.MAIL_TO}")
         
         logger.info("环境设置完成")
         return True
@@ -148,7 +149,12 @@ if __name__ == "__main__":
     # 解析命令行参数
     parser = argparse.ArgumentParser(description='股票分析系统')
     parser.add_argument('stock_code', type=str, help='要分析的股票代码（例如：002511.SZ）')
+    parser.add_argument('--mail_to', type=str, help='接收报告的邮箱地址', default=None)
     args = parser.parse_args()
+    
+    # 如果提供了邮件地址参数，更新配置
+    if args.mail_to:
+        Config.set_mail_to(args.mail_to)
     
     # 执行主程序
     result = main(args.stock_code)
