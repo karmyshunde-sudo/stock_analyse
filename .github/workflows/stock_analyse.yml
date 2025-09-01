@@ -1,0 +1,50 @@
+name: Stock Analyse
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: '任务类型'
+        required: true
+        type: choice
+        options:
+          - 'analyze_stock'
+          - 'test_email'
+      stock_code:
+        description: '要分析的股票代码 (仅当任务类型为analyze_stock时需要)'
+        required: false
+        default: '002511.SZ'
+
+jobs:
+  analyze-stock:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout代码
+        uses: actions/checkout@v4
+        
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+        
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+        
+      - name: 配置环境变量
+        run: |
+          echo "MAIL_SERVER=${{ secrets.MAIL_SERVER }}" >> $GITHUB_ENV
+          echo "MAIL_PORT=${{ secrets.MAIL_PORT }}" >> $GITHUB_ENV
+          echo "MAIL_USERNAME=${{ secrets.MAIL_USERNAME }}" >> $GITHUB_ENV
+          echo "MAIL_PASSWORD=${{ secrets.MAIL_PASSWORD }}" >> $GITHUB_ENV
+          echo "MAIL_TO=${{ secrets.MAIL_TO }}" >> $GITHUB_ENV
+        
+      - name: 执行任务
+        run: |
+          if [[ "${{ github.event.inputs.task }}" == "test_email" ]]; then
+            echo "执行邮件测试任务..."
+            python test_email.py
+          else
+            echo "执行股票分析任务: ${{ github.event.inputs.stock_code }}"
+            python main.py ${{ github.event.inputs.stock_code }}
+          fi
