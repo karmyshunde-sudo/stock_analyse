@@ -6,16 +6,25 @@
 """
 
 import smtplib
+import ssl
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
 import logging
 import os
+import re
 from datetime import datetime
 from config import Config
 
 # 初始化日志
 logger = logging.getLogger(__name__)
+
+def is_valid_email(email: str) -> bool:
+    """验证邮箱格式是否正确"""
+    if not email:
+        return False
+    pattern = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    return re.match(pattern, email) is not None
 
 def send_stock_analysis_report(stock_code: str, report: str) -> bool:
     """
@@ -32,9 +41,13 @@ def send_stock_analysis_report(stock_code: str, report: str) -> bool:
         # 获取当前北京时间
         beijing_now = datetime.now(Config.BEIJING_TIMEZONE)
         
-        # 检查MAIL_TO是否配置
-        if not Config.MAIL_TO or Config.MAIL_TO.strip() == '':
-            logger.error("MAIL_TO配置为空，无法发送邮件")
+        # 验证邮箱格式
+        if not is_valid_email(Config.MAIL_USERNAME):
+            logger.error(f"发件人邮箱格式无效: {Config.MAIL_USERNAME}")
+            return False
+            
+        if not is_valid_email(Config.MAIL_TO):
+            logger.error(f"收件人邮箱格式无效: {Config.MAIL_TO}")
             return False
             
         # 邮件主题
@@ -49,27 +62,63 @@ def send_stock_analysis_report(stock_code: str, report: str) -> bool:
         msg['To'] = Config.MAIL_TO
         msg['Subject'] = Header(subject, 'utf-8')
         
+        # 添加基础头信息（防止被标记为垃圾邮件）
+        msg['Message-ID'] = f"<{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.{os.getpid()}@{Config.MAIL_USERNAME.split('@')[1]}>"
+        msg['Date'] = datetime.utcnow().strftime("%a, %d %b %Y %H:%M:%S +0000")
+        msg['X-Mailer'] = "Python SMTP"
+        msg['X-Priority'] = '1'
+        msg['X-MSMail-Priority'] = 'High'
+        msg['Importance'] = 'High'
+        
+        # 为临时邮箱服务添加特殊头信息
+        temp_mail_domains = ['temp-mail.org', '10minutemail.com', 'mailinator.com', 
+                             'guerrillamail.com', 'yopmail.com', 'throwawaymail.com']
+        if any(domain in Config.MAIL_TO.lower() for domain in temp_mail_domains):
+            logger.info("检测到临时邮箱服务，添加特殊头信息")
+            msg['List-Unsubscribe'] = f"<mailto:{Config.MAIL_USERNAME}?subject=unsubscribe>"
+            msg['X-Complaints-To'] = Config.MAIL_USERNAME
+            msg['Precedence'] = 'bulk'
+        
         # 添加HTML内容
         msg.attach(MIMEText(html_content, 'html', 'utf-8'))
         
-        # 添加QQ邮箱特殊头信息（避免被当作垃圾邮件）
-        if '@qq.com' in Config.MAIL_TO.lower():
-            msg['X-Priority'] = '1'
-            msg['X-MSMail-Priority'] = 'High'
-            msg['Importance'] = 'High'
+        # 详细日志记录
+        logger.info(f"准备发送邮件:")
+        logger.info(f"  邮件服务器: {Config.MAIL_SERVER}:{Config.MAIL_PORT}")
+        logger.info(f"  发件人: {Config.MAIL_USERNAME}")
+        logger.info(f"  收件人: {Config.MAIL_TO}")
+        logger.info(f"  主题: {subject}")
+        logger.info(f"  邮件大小: {len(html_content)} 字节")
         
         # 发送邮件
-        with smtplib.SMTP_SSL(Config.MAIL_SERVER, Config.MAIL_PORT) as server:
-            server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
-            # 确保收件人列表正确分割
-            to_list = [email.strip() for email in Config.MAIL_TO.split(',') if email.strip()]
-            server.sendmail(Config.MAIL_USERNAME, to_list, msg.as_string())
-        
-        logger.info(f"股票分析报告邮件已成功发送至 {Config.MAIL_TO}")
-        logger.info(f"邮件服务器: {Config.MAIL_SERVER}:{Config.MAIL_PORT}")
-        logger.info(f"发件人: {Config.MAIL_USERNAME}")
-        logger.info(f"收件人: {Config.MAIL_TO}")
-        return True
+        try:
+            # 创建SSL上下文
+            context = ssl.create_default_context()
+            
+            # 连接到邮件服务器
+            with smtplib.SMTP_SSL(Config.MAIL_SERVER, Config.MAIL_PORT, context=context) as server:
+                # 登录
+                server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
+                logger.info("SMTP登录成功")
+                
+                # 发送邮件
+                server.sendmail(Config.MAIL_USERNAME, Config.MAIL_TO.split(','), msg.as_string())
+                logger.info(f"股票分析报告邮件已成功发送至 {Config.MAIL_TO}")
+                
+                # 添加额外延迟，确保邮件被完全发送
+                import time
+                time.sleep(1)
+                
+                return True
+            
+        except smtplib.SMTPAuthenticationError as auth_err:
+            logger.error(f"SMTP认证失败: {str(auth_err)}")
+            logger.error("请检查: 1. 邮箱授权码是否正确 2. 是否开启了SMTP服务")
+            return False
+            
+        except Exception as e:
+            logger.error(f"邮件发送过程中发生未知错误: {str(e)}")
+            return False
     
     except Exception as e:
         error_msg = f"发送股票分析报告邮件失败: {str(e)}"
@@ -299,10 +348,21 @@ def test_email_connection() -> bool:
         bool: 连接是否成功
     """
     try:
-        with smtplib.SMTP_SSL(Config.MAIL_SERVER, Config.MAIL_PORT) as server:
+        logger.info(f"测试邮件服务器连接: {Config.MAIL_SERVER}:{Config.MAIL_PORT}")
+        
+        # 创建SSL上下文
+        context = ssl.create_default_context()
+        
+        # 连接到邮件服务器
+        with smtplib.SMTP_SSL(Config.MAIL_SERVER, Config.MAIL_PORT, context=context) as server:
             server.login(Config.MAIL_USERNAME, Config.MAIL_PASSWORD)
-            logger.info("邮件服务器连接测试成功")
-            return True
+        
+        logger.info("邮件服务器连接测试成功")
+        return True
+    except smtplib.SMTPAuthenticationError as auth_err:
+        logger.error(f"SMTP认证失败: {str(auth_err)}")
+        logger.error("请检查: 1. 邮箱授权码是否正确 2. 是否开启了SMTP服务")
+        return False
     except Exception as e:
         error_msg = f"邮件服务器连接测试失败: {str(e)}"
         logger.error(error_msg)
