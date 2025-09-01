@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 配置模块
-提供项目全局配置参数，包括路径、日志、邮件配置等
+提供项目全局配置参数，包括路径、日志和企业微信通知配置
 """
 
 import os
@@ -63,29 +63,17 @@ class Config:
     LOG_FORMAT: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     
     # -------------------------
-    # 2. 邮件配置
+    # 2. 企业微信通知配置
     # -------------------------
-    MAIL_SERVER: str = os.getenv("MAIL_SERVER", "smtp.qq.com")
-    MAIL_PORT: int = int(os.getenv("MAIL_PORT", "465"))
-    MAIL_USERNAME: str = os.getenv("MAIL_USERNAME", "")
-    MAIL_PASSWORD: str = os.getenv("MAIL_PASSWORD", "")
-    MAIL_SENDER_NAME: str = os.getenv("MAIL_SENDER_NAME", "Stock Analyse系统")
+    WECOM_WEBHOOK: str = os.getenv("WECOM_WEBHOOK", "")
     
-    # 修改点：MAIL_TO 现在可以接收工作流传入的邮件地址
-    # 优先级：1. 命令行参数 > 2. 环境变量 > 3. 默认值
-    MAIL_TO: str = os.getenv("MAIL_TO", "angel49946491@qq.com")  # 默认值设置为您的QQ邮箱
-    
-    # -------------------------
-    # 2.1 新增：用于更新MAIL_TO的方法
-    # -------------------------
-    @staticmethod
-    def set_mail_to(new_mail_to: str) -> None:
-        """
-        设置邮件接收地址（用于在运行时动态更新）
-        :param new_mail_to: 新的邮件地址
-        """
-        Config.MAIL_TO = new_mail_to
-        logging.info(f"已更新MAIL_TO为: {new_mail_to}")
+    # 企业微信消息固定后缀
+    WECOM_MESFOOTER: str = (
+        "\n\n──────────────────\n"
+        "🕒 北京时间: {beijing_time}\n"
+        "📊 数据来源: {repo_name}\n"
+        "🔗 GitHub Actions: {run_url}"
+    )
     
     # -------------------------
     # 3. 数据源配置
@@ -245,17 +233,15 @@ except Exception as e:
     logging.info("已设置基础日志配置，继续执行")
 
 # -------------------------
-# 检查环境变量
+# 检查企业微信配置
 # -------------------------
 try:
-    mail_server = os.getenv("MAIL_SERVER")
-    mail_username = os.getenv("MAIL_USERNAME")
-    mail_password = os.getenv("MAIL_PASSWORD")
+    wecom_webhook = os.getenv("WECOM_WEBHOOK", Config.WECOM_WEBHOOK)
     
-    if mail_server and mail_username and mail_password:
-        logging.info("检测到邮件服务器配置已设置")
+    if wecom_webhook:
+        logging.info("检测到企业微信Webhook配置已设置")
     else:
-        logging.warning("邮件服务器配置不完整，邮件发送功能将不可用")
+        logging.warning("企业微信Webhook未配置，通知功能将不可用")
         
 except Exception as e:
-    logging.error(f"检查环境变量时出错: {str(e)}", exc_info=True)
+    logging.error(f"检查企业微信配置时出错: {str(e)}", exc_info=True)
