@@ -1,4 +1,4 @@
-name: Stock Analyse
+name: 单只股票诊断系统
 
 on:
   workflow_dispatch:
