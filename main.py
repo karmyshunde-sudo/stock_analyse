@@ -11,6 +11,7 @@ import json
 import logging
 import traceback
 import argparse
+import subprocess
 from datetime import datetime
 from typing import Dict, Any, Optional
 from config import Config
@@ -20,6 +21,33 @@ from email_sender import send_stock_analysis_report
 # 初始化日志
 Config.setup_logging(log_file=Config.LOG_FILE)
 logger = logging.getLogger(__name__)
+
+def ensure_latest_code():
+    """确保拉取最新代码，避免冲突"""
+    try:
+        logger.info("拉取远程最新代码以确保同步...")
+        
+        # 设置 Git 用户信息
+        subprocess.run(["git", "config", "user.name", "GitHub Actions"], check=True)
+        subprocess.run(["git", "config", "user.email", "actions@github.com"], check=True)
+        
+        # 尝试拉取最新代码
+        result = subprocess.run(
+            ["git", "pull", "origin", "main", "--rebase", "--autostash"],
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            logger.info("✅ 成功拉取最新代码")
+            if result.stdout:
+                logger.debug(f"Git pull 输出: {result.stdout}")
+        else:
+            logger.warning(f"⚠️ 拉取代码时出现警告: {result.stderr}")
+            # 即使有警告也继续执行
+    except Exception as e:
+        logger.error(f"拉取最新代码失败: {str(e)}")
+        # 出错时不中断主流程，仅记录错误
 
 def main(stock_code: str) -> Dict[str, Any]:
     """
@@ -32,6 +60,9 @@ def main(stock_code: str) -> Dict[str, Any]:
         Dict[str, Any]: 任务执行结果
     """
     try:
+        # 确保拉取最新代码
+        ensure_latest_code()
+        
         # 获取当前时间
         beijing_now = datetime.now(Config.BEIJING_TIMEZONE)
         logger.info(f"===== 开始执行股票分析任务：{stock_code} =====")
